@@ -18,7 +18,7 @@ export const logPath = (provider: string, name: string) => {
   return join(stateRoot(), provider, `${name}.log`);
 };
 
-async function locked<T>(file: string, work: () => Promise<T>): Promise<T> {
+export async function locked<T>(file: string, work: () => Promise<T>): Promise<T> {
   const lock = `${file}.lock`;
   await mkdir(dirname(file), { recursive: true, mode: 0o700 });
   const deadline = Date.now() + 10_000;
@@ -39,7 +39,7 @@ async function locked<T>(file: string, work: () => Promise<T>): Promise<T> {
   finally { await handle.close(); await rm(lock, { force: true }); }
 }
 
-async function readEnvelope<T>(file: string, parser: z.ZodType<T>, empty: T): Promise<T> {
+export async function readEnvelope<T>(file: string, parser: z.ZodType<T>, empty: T): Promise<T> {
   try {
     const raw: unknown = JSON.parse(await readFile(file, "utf8"));
     return parser.parse(raw);
@@ -48,7 +48,7 @@ async function readEnvelope<T>(file: string, parser: z.ZodType<T>, empty: T): Pr
     throw new Error(`Cannot read ${file}: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
-async function writeAtomic(file: string, value: unknown): Promise<void> {
+export async function writeAtomic(file: string, value: unknown): Promise<void> {
   const temp = `${file}.${process.pid}.${randomUUID()}.tmp`;
   const handle = await open(temp, "wx", 0o600);
   try { await handle.writeFile(`${JSON.stringify(value, null, 2)}\n`); await handle.sync(); }

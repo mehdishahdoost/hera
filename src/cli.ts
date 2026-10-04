@@ -6,6 +6,7 @@ import { execute } from "./runner.js";
 import { ensureScheduler, schedulerStatus } from "./scheduler.js";
 import type { Schedule } from "./types.js";
 import { createSessionName } from "./session-name.js";
+import { addMcp, SelectionCancelled } from "./mcp.js";
 
 const required = (value: string | undefined, flag: string): string => {
   if (!value?.trim()) throw new InvalidArgumentError(`${flag} must not be empty`);
@@ -16,6 +17,7 @@ const parsePrompt = (value: string | undefined) => required(value, "--prompt");
 const parseModel = (value: string | undefined) => required(value, "--model");
 
 export const program = new Command().name("hera").description("Orchestrate local AI agent CLIs").version("0.1.0");
+program.enablePositionalOptions();
 program.action(() => { program.outputHelp(); });
 program.command("run")
   .requiredOption("--provider <name>", "Agent provider", parseProvider)
@@ -86,6 +88,32 @@ program.command("plugin").description("Manage provider plugins")
     console.log(`Installed '${plugin.name}' for ${plugin.provider}.`);
   });
 
+class McpAddCommand extends Command {
+  hasDelimiter = false;
+  commandArgs: string[] = [];
+  override parseOptions(argv: string[]) {
+    this.hasDelimiter = false;
+    this.commandArgs = [];
+    for (let index = 0; index < argv.length; index++) {
+      if (argv[index] === "--env") { index++; continue; }
+      if (argv[index] === "--") { this.hasDelimiter = index < argv.length - 1; this.commandArgs = argv.slice(index + 1); break; }
+    }
+    return super.parseOptions(argv);
+  }
+}
+const mcpAdd = new McpAddCommand("add").argument("<name>").argument("<command...>")
+  .description("Save a stdio server, then select installed platforms. Separate executable and arguments with --.")
+  .option("--env <KEY=value>", "Server environment assignment (repeatable)", (value: string, previous: string[]) => [...previous, value], [])
+  .action(async (name: string, command: string[], options: { env: string[] }) => {
+    // Commander consumes the delimiter. Check the original argv so accidental
+    // command positionals without -- cannot be silently accepted.
+    if (!mcpAdd.hasDelimiter) throw new Error("MCP command must follow an explicit -- delimiter.");
+    if (JSON.stringify(command) !== JSON.stringify(mcpAdd.commandArgs)) throw new Error("Place the executable and all server arguments after --.");
+    const code = await addMcp(name, command, options.env);
+    if (code) process.exitCode = code;
+  });
+program.command("mcp").enablePositionalOptions().description("Manage saved MCP server definitions").addCommand(mcpAdd);
+
 program.command("internal", { hidden: true }).command("scheduler", { hidden: true }).action(async () => {
   const { runScheduler } = await import("./scheduler.js"); await runScheduler();
 });
@@ -93,6 +121,7 @@ program.exitOverride();
 export async function main(argv = process.argv): Promise<void> {
   try { await program.parseAsync(argv); }
   catch (error) {
+    if (error instanceof SelectionCancelled) { console.error(error.message); process.exitCode = 130; return; }
     if (error instanceof CommanderError) { process.exitCode = error.exitCode; return; }
     if (error instanceof Error) { console.error(error.message); process.exitCode = 1; return; }
     throw error;

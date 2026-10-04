@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "platforms": [
+    { "id": "codex", "name": "Codex", "executable": "codex" },
+    { "id": "claude", "name": "Claude Code", "executable": "claude" }
+  ]
+}
